@@ -29,7 +29,7 @@ beforeEach(() => {
         path.map((item, index) => ({ id: item.entryId, name: item.name, personId: item.personId, parentEntryId: ids[index - 1] ?? null, fields: {} }))
       return entries as never
     }
-    if (command === 'read_member') return { fields, spouseIds: [], registrationCount: 1 } as never
+    if (command === 'read_member') return { fields: { ...fields }, spouseIds: [], registrationCount: 1 } as never
     if (command === 'get_entry') return {
       hit: args?.entryId === 'leaf' ? hit : { entry: { name: args?.entryId === 'other-root' ? '另一位始祖' : '始祖' }, generation: 1, path: [] },
       person: fields, spouses: [], otherRegistrations: [],
@@ -70,5 +70,21 @@ test('switching families discards a delayed search from the previous family', as
   await flushPromises()
   expect(wrapper.find('[data-search-hit="leaf"]').exists()).toBe(false)
   expect(wrapper.get('[data-entry-id="other-root"]').text()).toContain('另一位始祖')
+  wrapper.unmount()
+})
+
+test('switching archive sections preserves the current profile draft', async () => {
+  const wrapper = mount(App)
+  await flushPromises()
+  await wrapper.get('select').setValue(family.id)
+  await flushPromises()
+  await wrapper.get('#profile-alias').setValue('草稿谱名')
+  await wrapper.get('[aria-controls="registration-panel"]').trigger('click')
+  expect(wrapper.get('#registration-panel').isVisible()).toBe(true)
+  expect(wrapper.get('#profile-panel').isVisible()).toBe(false)
+  await wrapper.get('[aria-controls="profile-panel"]').trigger('click')
+  await wrapper.get('[data-entry-id="root"]').trigger('click')
+  await flushPromises()
+  expect((wrapper.get('#profile-alias').element as HTMLInputElement).value).toBe('草稿谱名')
   wrapper.unmount()
 })

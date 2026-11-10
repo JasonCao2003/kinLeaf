@@ -45,25 +45,22 @@ const visible = computed(() => {
 
 <template>
   <ul aria-label="世系树" class="lineage">
-    <li v-for="node in visible" :key="node.entry.id" :style="{ paddingInlineStart: (node.generation - 1) + 'rem' }">
+    <li v-for="node in visible" :key="node.entry.id" :style="{ paddingInlineStart: Math.min(node.generation - 1, 10) * 0.55 + 'rem' }">
       <button
         v-if="node.hasChildren"
+        class="branch-toggle"
         type="button"
         :aria-expanded="expandedIds.has(node.entry.id)"
         :aria-label="(expandedIds.has(node.entry.id) ? '折叠 ' : '展开 ') + node.entry.name"
         @click="emit('toggle', node.entry.id)"
       >{{ expandedIds.has(node.entry.id) ? '−' : '+' }}</button>
       <button
+        class="lineage-entry"
         type="button"
         :aria-current="selectedId === node.entry.id ? 'true' : undefined"
         :data-entry-id="node.entry.id"
         @click="emit('select', node.entry.id)"
-      >{{ node.entry.name }} · 第 {{ node.generation }} 世</button>
+      ><span>{{ node.entry.name }}</span><small>第 {{ node.generation }} 世</small></button>
     </li>
   </ul>
 </template>
-
-<style scoped>
-.lineage { list-style: none; padding: 0; }
-.lineage button[aria-current] { font-weight: bold; }
-</style>

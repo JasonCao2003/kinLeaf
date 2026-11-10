@@ -15,6 +15,13 @@ const searchRevision = ref(0)
 const selectedId = ref(props.family.rootEntryId)
 const selected = computed(() => registrations.value.find(entry => entry.id === selectedId.value))
 const relatives = computed(() => people.value.filter(person => person.id !== selected.value?.personId))
+const activePanel = ref<'profile' | 'registration' | 'relatives'>('profile')
+const addingChild = ref(false)
+const panels = [
+  { id: 'profile', label: '个人档案' },
+  { id: 'registration', label: '支系登记' },
+  { id: 'relatives', label: '亲属关系' },
+] as const
 const busy = ref(false)
 const error = ref('')
 const parentId = ref('')
@@ -42,6 +49,9 @@ async function readSelection() {
   rank.value = entry.fields.rank ?? ''
   branchNotes.value = entry.fields.branchNotes ?? ''
   spouseId.value = ''
+  childName.value = ''
+  existingPerson.value = ''
+  addingChild.value = false
   const [profile, lineage] = await Promise.all([api.read(entry.personId), api.detail(entry.id)])
   member.value = profile
   detail.value = lineage
@@ -87,6 +97,10 @@ function expandSelectionPath() {
 
 function selectEntry(id: string) {
   return run(async () => {
+    if (id === selectedId.value && detail.value) {
+      expandSelectionPath()
+      return
+    }
     selectedId.value = id
     await readSelection()
   })
@@ -180,128 +194,140 @@ onMounted(() => run(refreshSelection))
 </script>
 
 <template>
-  <section aria-labelledby="member-editor">
-    <h2 id="member-editor">族员管理</h2>
-    <p v-if="error" role="alert">{{ error }}</p>
-    <MemberSearch :key="searchRevision" :search="api.search" :disabled="busy" @locate="locate" />
-    <fieldset :disabled="busy">
-      <legend>世系浏览</legend>
-      <LineageTree
-        :entries="registrations"
-        :root-id="family.rootEntryId"
-        :selected-id="selectedId"
-        :expanded-ids="expandedIds"
-        @select="selectEntry"
-        @toggle="toggleBranch"
-      />
-      <section v-if="detail" aria-label="世系详情">
-        <h3>{{ detail.hit.entry.name }} · 第 {{ detail.hit.generation }} 世</h3>
-        <p>生父 {{ detail.father?.name ?? '未知' }} · 生母 {{ detail.mother?.name ?? '未知' }}</p>
-        <p v-if="detail.spouses.length">配偶 {{ detail.spouses.map(person => person.name).join('、') }}</p>
-        <ul v-if="detail.otherRegistrations.length" aria-label="其他支系登记">
+  <section class="genealogy" aria-label="族谱工作区">
+    <aside class="lineage-sidebar" aria-labelledby="lineage-title">
+      <div class="sidebar-heading">
+        <h2 id="lineage-title">{{ family.name }}</h2>
+        <p>{{ registrations.length }} 条族员登记</p>
+      </div>
+      <MemberSearch :key="searchRevision" :search="api.search" :disabled="busy" @locate="locate" />
+      <fieldset class="tree-fieldset" :disabled="busy">
+        <legend>世系</legend>
+        <LineageTree
+          :entries="registrations"
+          :root-id="family.rootEntryId"
+          :selected-id="selectedId"
+          :expanded-ids="expandedIds"
+          @select="selectEntry"
+          @toggle="toggleBranch"
+        />
+      </fieldset>
+    </aside>
+    <div class="archive">
+      <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
+      <p v-if="busy && !detail" class="notice" role="status">正在读取族员资料…</p>
+      <header v-if="detail" class="archive-heading" aria-label="世系详情">
+        <p class="ancestor-path">{{ detail.hit.path.map(entry => entry.name).join(' / ') || '始祖' }}</p>
+        <div class="archive-title">
+          <h2>{{ detail.hit.entry.name }} <span class="generation">第 {{ detail.hit.generation }} 世</span></h2>
+          <button
+            class="ink-button" type="button" :disabled="busy" aria-controls="add-child-panel"
+            :aria-expanded="addingChild" @click="addingChild = !addingChild"
+          >{{ addingChild ? '收起登记' : '登记后代' }}</button>
+        </div>
+        <ul v-if="detail.otherRegistrations.length" class="linked-entries" aria-label="其他支系登记">
           <li v-for="hit in detail.otherRegistrations" :key="hit.entry.entryId">
-            <button type="button" @click="locate(hit)">{{ hit.path.map(entry => entry.name).join(' › ') }}</button>
+            <button type="button" :disabled="busy" @click="locate(hit)">{{ hit.path.map(entry => entry.name).join(' › ') }}</button>
           </li>
         </ul>
-      </section>
-    </fieldset>
-    <fieldset :disabled="busy">
-      <legend>选择族员登记</legend>
-      <select v-model="selectedId" aria-label="族员登记" @change="run(readSelection)">
-        <option v-for="entry in registrations" :key="entry.id" :value="entry.id">
-          {{ entryLabel(entry) }}
-        </option>
-      </select>
-    </fieldset>
+      </header>
+      <fieldset v-if="selected && member" v-show="addingChild" id="add-child-panel" class="archive-panel" :disabled="busy">
+        <legend>登记后代</legend>
+        <form class="paper-form" @submit.prevent="addChild">
+          <label>档案来源
+            <select v-model="existingPerson">
+              <option value="">新建个人档案</option>
+              <option v-for="person in people" :key="person.id" :value="person.id">
+                {{ person.name }} · {{ person.id.slice(0, 8) }}
+              </option>
+            </select>
+          </label>
+          <label v-if="!existingPerson">姓名 <input v-model="childName" required></label>
+          <button>{{ existingPerson ? '登记现有档案（兼祧）' : '新增后代' }}</button>
+        </form>
+      </fieldset>
+      <div v-if="selected && member" class="archive-sections" role="group" aria-label="档案分区">
+        <button
+          v-for="panel in panels" :key="panel.id" type="button" :aria-pressed="activePanel === panel.id"
+          :aria-controls="panel.id + '-panel'" @click="activePanel = panel.id"
+        >{{ panel.label }}</button>
+      </div>
 
-    <fieldset v-if="selected && member" :disabled="busy">
-      <legend>登记信息</legend>
-      <form @submit.prevent="saveRegistration">
-        <label v-if="selected.parentEntryId">
-          谱系上级
-          <select v-model="parentId" required>
-            <option v-for="entry in registrations.filter(item => item.id !== selectedId)" :key="entry.id" :value="entry.id">
-              {{ entryLabel(entry) }}
-            </option>
-          </select>
-        </label>
-        <label>排行 <input v-model.number="rank" type="number" min="1" step="1"></label>
-        <label>支系备注 <textarea v-model="branchNotes" /></label>
-        <button>保存登记</button>
-        <button v-if="selected.parentEntryId" type="button" @click="deleteRegistration">删除登记</button>
-      </form>
-    </fieldset>
+      <fieldset v-if="selected && member" v-show="activePanel === 'registration'" id="registration-panel" class="archive-panel" :disabled="busy">
+        <legend>登记信息</legend>
+        <form class="paper-form" @submit.prevent="saveRegistration">
+          <label v-if="selected.parentEntryId">
+            谱系上级
+            <select v-model="parentId" required>
+              <option v-for="entry in registrations.filter(item => item.id !== selectedId)" :key="entry.id" :value="entry.id">
+                {{ entryLabel(entry) }}
+              </option>
+            </select>
+          </label>
+          <label>排行 <input v-model.number="rank" type="number" min="1" step="1"></label>
+          <label class="full-field">支系备注 <textarea v-model="branchNotes" /></label>
+          <button class="ink-button">保存登记</button>
+          <button v-if="selected.parentEntryId" class="danger-button" type="button" @click="deleteRegistration">删除登记</button>
+        </form>
+      </fieldset>
 
-    <fieldset v-if="selected && member" :disabled="busy">
-      <legend>个人档案</legend>
-      <p v-if="member.registrationCount > 1" role="status">
-        这份个人档案用于 {{ member.registrationCount }} 条登记，保存会同步更新所有登记中的个人资料。
-      </p>
-      <form @submit.prevent="saveProfile">
-        <label>姓名 <input v-model="member.fields.name" required></label>
-        <label>谱名 <input v-model="member.fields.spectrumName"></label>
-        <label>字辈 <input v-model="member.fields.generationName"></label>
-        <label>出生 <input v-model="member.fields.birthText"></label>
-        <label>逝世 <input v-model="member.fields.deathText"></label>
-        <label>备注 <textarea v-model="member.fields.notes" /></label>
-        <button>保存档案</button>
-      </form>
-    </fieldset>
+      <fieldset v-if="selected && member" v-show="activePanel === 'profile'" id="profile-panel" class="archive-panel" :disabled="busy">
+        <legend>个人档案</legend>
+        <p v-if="member.registrationCount > 1" role="status">
+          这份个人档案用于 {{ member.registrationCount }} 条登记，保存会同步更新所有登记中的个人资料。
+        </p>
+        <form class="paper-form" @submit.prevent="saveProfile">
+          <label>姓名 <input v-model="member.fields.name" required></label>
+          <label>谱名 <input id="profile-alias" v-model="member.fields.spectrumName"></label>
+          <label>字辈 <input v-model="member.fields.generationName"></label>
+          <label>出生 <input v-model="member.fields.birthText"></label>
+          <label>逝世 <input v-model="member.fields.deathText"></label>
+          <label class="full-field">备注 <textarea v-model="member.fields.notes" /></label>
+          <button class="ink-button">保存档案</button>
+        </form>
+      </fieldset>
 
-    <fieldset v-if="selected && member" :disabled="busy">
-      <legend>亲属关系</legend>
-      <form @submit.prevent="saveParents">
-        <label>生父
-          <select v-model="member.fatherId">
-            <option :value="null">未知</option>
-            <option v-for="person in relatives" :key="person.id" :value="person.id">{{ person.name }} · {{ person.id.slice(0, 8) }}</option>
-          </select>
-        </label>
-        <label>生母
-          <select v-model="member.motherId">
-            <option :value="null">未知</option>
-            <option v-for="person in relatives" :key="person.id" :value="person.id">{{ person.name }} · {{ person.id.slice(0, 8) }}</option>
-          </select>
-        </label>
-        <button>保存父母关系</button>
-      </form>
-      <ul v-if="member.spouseIds.length">
-        <li v-for="id in member.spouseIds" :key="id">
-          {{ people.find(person => person.id === id)?.name }}
-          <button type="button" @click="changeSpouse(id, false)">解除配偶关联</button>
-        </li>
-      </ul>
-      <form @submit.prevent="changeSpouse(spouseId, true)">
-        <label>配偶
-          <select v-model="spouseId" required>
-            <option value="" disabled>选择档案</option>
-            <option v-for="person in relatives.filter(person => !member?.spouseIds.includes(person.id))" :key="person.id" :value="person.id">
-              {{ person.name }} · {{ person.id.slice(0, 8) }}
-            </option>
-          </select>
-        </label>
-        <button>添加配偶</button>
-      </form>
-      <form @submit.prevent="addRelative">
-        <label>新建亲属档案 <input v-model="relativeName" required></label>
-        <button>创建档案</button>
-      </form>
-    </fieldset>
+      <fieldset v-if="selected && member" v-show="activePanel === 'relatives'" id="relatives-panel" class="archive-panel" :disabled="busy">
+        <legend>亲属关系</legend>
+        <form class="paper-form" @submit.prevent="saveParents">
+          <label>生父
+            <select v-model="member.fatherId">
+              <option :value="null">未知</option>
+              <option v-for="person in relatives" :key="person.id" :value="person.id">{{ person.name }} · {{ person.id.slice(0, 8) }}</option>
+            </select>
+          </label>
+          <label>生母
+            <select v-model="member.motherId">
+              <option :value="null">未知</option>
+              <option v-for="person in relatives" :key="person.id" :value="person.id">{{ person.name }} · {{ person.id.slice(0, 8) }}</option>
+            </select>
+          </label>
+          <button class="ink-button">保存父母关系</button>
+        </form>
+        <ul v-if="member.spouseIds.length">
+          <li v-for="id in member.spouseIds" :key="id">
+            {{ people.find(person => person.id === id)?.name }}
+            <button type="button" @click="changeSpouse(id, false)">解除配偶关联</button>
+          </li>
+        </ul>
+        <form class="paper-form" @submit.prevent="changeSpouse(spouseId, true)">
+          <label>配偶
+            <select v-model="spouseId" required>
+              <option value="" disabled>选择档案</option>
+              <option v-for="person in relatives.filter(person => !member?.spouseIds.includes(person.id))" :key="person.id" :value="person.id">
+                {{ person.name }} · {{ person.id.slice(0, 8) }}
+              </option>
+            </select>
+          </label>
+          <button>添加配偶</button>
+        </form>
+        <form class="paper-form" @submit.prevent="addRelative">
+          <label>新建亲属档案 <input v-model="relativeName" required></label>
+          <button>创建档案</button>
+        </form>
+      </fieldset>
 
-    <fieldset v-if="selected && member" :disabled="busy">
-      <legend>登记后代</legend>
-      <form @submit.prevent="addChild">
-        <label>档案来源
-          <select v-model="existingPerson">
-            <option value="">新建个人档案</option>
-            <option v-for="person in people" :key="person.id" :value="person.id">
-              {{ person.name }} · {{ person.id.slice(0, 8) }}
-            </option>
-          </select>
-        </label>
-        <label v-if="!existingPerson">姓名 <input v-model="childName" required></label>
-        <button>{{ existingPerson ? '登记现有档案（兼祧）' : '新增后代' }}</button>
-      </form>
-    </fieldset>
+
+    </div>
   </section>
 </template>

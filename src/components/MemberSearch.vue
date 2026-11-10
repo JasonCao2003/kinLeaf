@@ -37,14 +37,14 @@ async function submit() {
 </script>
 
 <template>
-  <form role="search" @submit.prevent="submit">
+  <form class="member-search" role="search" @submit.prevent="submit">
     <label>按姓名或谱名搜索 <input v-model="query" type="search" :disabled="disabled"></label>
     <button :disabled="disabled || !query.trim()">搜索</button>
   </form>
   <p v-if="state === 'loading'" role="status">正在搜索…</p>
   <p v-if="state === 'error'" role="alert">搜索失败，请重试。</p>
   <p v-if="state === 'done' && !hits.length" role="status">未找到匹配的族员登记。</p>
-  <ul v-if="hits.length" aria-label="搜索结果">
+  <ul v-if="hits.length" class="search-results" aria-label="搜索结果">
     <li v-for="hit in hits" :key="hit.entry.entryId">
       <button
         type="button"

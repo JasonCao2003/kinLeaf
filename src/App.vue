@@ -10,6 +10,7 @@ const founderName = ref('')
 const pending = ref(false)
 const error = ref('')
 const unreadableCount = ref(0)
+const creating = ref(false)
 const selected = computed(() => families.value.find(family => family.id === selectedId.value))
 
 onMounted(async () => {
@@ -33,6 +34,7 @@ async function submit() {
     const family = await createFamily(name.value, founderName.value)
     families.value = [...families.value, family]
     selectedId.value = family.id
+    creating.value = false
     name.value = ''
     founderName.value = ''
   } catch {
@@ -44,24 +46,42 @@ async function submit() {
 </script>
 
 <template>
-  <main>
-    <h1>枝间 Kinleaf</h1>
-    <label>
-      打开族谱
-      <select v-model="selectedId" :disabled="pending || families.length === 0">
-        <option disabled value="">请选择族谱</option>
-        <option v-for="family in families" :key="family.id" :value="family.id">{{ family.name }}</option>
-      </select>
-    </label>
-    <p v-if="selected">已打开 {{ selected.name }}</p>
-    <p v-if="unreadableCount" role="status">{{ unreadableCount }} 份族谱文件无法读取。</p>
-    <h2>新建族谱</h2>
-    <form @submit.prevent="submit">
-      <label>谱名 <input v-model="name" required></label>
-      <label>始祖姓名 <input v-model="founderName" required></label>
-      <button :disabled="pending || !name.trim() || !founderName.trim()">创建族谱</button>
-    </form>
-    <p v-if="error" role="alert">{{ error }}</p>
-    <MemberEditor v-if="selected" :key="selected.id" :family="selected" />
+  <main class="paper-app">
+    <header class="masthead">
+      <h1 class="brand"><span class="brand-seal" aria-hidden="true">枝</span> 枝间 <small>Kinleaf</small></h1>
+      <div class="family-controls">
+        <label>
+          打开族谱
+          <select v-model="selectedId" :disabled="pending || families.length === 0" @change="creating = false">
+            <option disabled value="">请选择族谱</option>
+            <option v-for="family in families" :key="family.id" :value="family.id">{{ family.name }}</option>
+          </select>
+        </label>
+        <button type="button" :disabled="pending" aria-controls="new-family" :aria-expanded="creating" @click="creating = !creating">
+          {{ creating ? '收起建谱' : '新建族谱' }}
+        </button>
+      </div>
+    </header>
+    <div class="paper-body">
+      <p v-if="pending && !creating" class="notice" role="status">正在读取本地族谱…</p>
+      <p v-if="unreadableCount" class="notice" role="status">{{ unreadableCount }} 份族谱文件无法读取。</p>
+      <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
+      <section v-if="creating" id="new-family" class="cover">
+        <h2>新建族谱</h2>
+        <p>从一位始祖开始，逐代记下家人的名字。</p>
+        <form class="paper-form" @submit.prevent="submit">
+          <label>谱名 <input v-model="name" required></label>
+          <label>始祖姓名 <input v-model="founderName" required></label>
+          <button class="ink-button" :disabled="pending || !name.trim() || !founderName.trim()">创建族谱</button>
+        </form>
+      </section>
+      <MemberEditor v-if="selected" :key="selected.id" :family="selected" />
+      <section v-else-if="!creating && !pending" class="cover empty-cover">
+        <span class="cover-seal" aria-hidden="true">谱</span>
+        <h2>把一家人的故事，慢慢写下去</h2>
+        <p>{{ families.length ? '从页首打开一份本机族谱，开始查阅世系。' : '新建一份族谱，从始祖开始记下家族世系。' }}</p>
+        <button class="ink-button" type="button" @click="creating = true">新建族谱</button>
+      </section>
+    </div>
   </main>
 </template>
