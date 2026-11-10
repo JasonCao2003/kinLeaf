@@ -4,11 +4,13 @@ use kinleaf::{
     model::{FamilyCatalog, FamilySummary},
     store::Store,
 };
+mod commands;
+
 use serde::Serialize;
 use tauri::{Manager, State};
 
 #[derive(Serialize)]
-struct AppError {
+pub(crate) struct AppError {
     code: &'static str,
     message: String,
 }
@@ -42,7 +44,20 @@ fn main() {
             app.manage(Store::new(&directory));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![list_families, create_family])
+        .invoke_handler(tauri::generate_handler![
+            list_families,
+            create_family,
+            commands::add_child,
+            commands::update_entry,
+            commands::delete_entry,
+            commands::create_person,
+            commands::update_person,
+            commands::find_people,
+            commands::set_parents,
+            commands::set_spouse,
+            commands::list_registrations,
+            commands::read_member
+        ])
         .run(tauri::generate_context!())
         .expect("start Kinleaf");
 }

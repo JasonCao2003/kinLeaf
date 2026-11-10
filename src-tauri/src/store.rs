@@ -13,7 +13,7 @@ pub struct Store {
     directory: PathBuf,
 }
 
-type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+pub(crate) type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 impl Store {
     pub fn new(directory: &Path) -> Self {
@@ -112,5 +112,20 @@ impl Store {
                 .then_with(|| left.id.cmp(&right.id))
         });
         Ok(catalog)
+    }
+}
+
+impl Store {
+    pub(crate) fn open_family(&self, id: &str) -> StoreResult<Connection> {
+        let uuid = Uuid::parse_str(id)?;
+        if uuid.to_string() != id {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid family ID").into());
+        }
+        let connection = Connection::open_with_flags(
+            self.directory.join(format!("{id}.sqlite3")),
+            OpenFlags::SQLITE_OPEN_READ_WRITE,
+        )?;
+        connection.pragma_update(None, "foreign_keys", true)?;
+        Ok(connection)
     }
 }

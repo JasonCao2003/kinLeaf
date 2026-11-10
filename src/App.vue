@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { createFamily, listFamilies, type FamilySummary } from './api'
+import MemberEditor from './components/MemberEditor.vue'
 
 const families = ref<FamilySummary[]>([])
 const selectedId = ref('')
@@ -61,5 +62,6 @@ async function submit() {
       <button :disabled="pending || !name.trim() || !founderName.trim()">创建族谱</button>
     </form>
     <p v-if="error" role="alert">{{ error }}</p>
+    <MemberEditor v-if="selected" :key="selected.id" :family="selected" />
   </main>
 </template>
