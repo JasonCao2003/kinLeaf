@@ -5,9 +5,58 @@ use kinleaf::{
     },
     store::Store,
 };
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::AppError;
+
+fn backup_error(error: impl std::fmt::Display) -> AppError {
+    AppError {
+        code: "backup_operation_failed",
+        message: error.to_string(),
+    }
+}
+
+#[tauri::command]
+pub async fn export_backup(app: AppHandle, family_id: String) -> Result<bool, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = app
+            .dialog()
+            .file()
+            .set_title("备份族谱")
+            .set_file_name("Kinleaf-backup.sqlite3")
+            .add_filter("Kinleaf 族谱备份", &["sqlite3"])
+            .blocking_save_file();
+        let Some(path) = path else { return Ok(false) };
+        let path = path.into_path().map_err(backup_error)?;
+        kinleaf::backup::export_to(&app.state::<Store>(), &family_id, &path)
+            .map_err(backup_error)?;
+        Ok(true)
+    })
+    .await
+    .map_err(backup_error)?
+}
+
+#[tauri::command]
+pub async fn restore_backup(
+    app: AppHandle,
+) -> Result<Option<kinleaf::model::FamilySummary>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = app
+            .dialog()
+            .file()
+            .set_title("从备份恢复族谱副本")
+            .add_filter("Kinleaf 族谱备份", &["sqlite3"])
+            .blocking_pick_file();
+        let Some(path) = path else { return Ok(None) };
+        let path = path.into_path().map_err(backup_error)?;
+        kinleaf::backup::restore_from(&app.state::<Store>(), &path)
+            .map(Some)
+            .map_err(backup_error)
+    })
+    .await
+    .map_err(backup_error)?
+}
 
 fn command_error(error: impl std::fmt::Display) -> AppError {
     AppError {
@@ -100,6 +149,18 @@ pub fn set_parents(
             father_id.as_deref(),
             mother_id.as_deref(),
         )
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub fn add_new_spouse(
+    store: State<'_, Store>,
+    family_id: String,
+    person_id: String,
+    fields: PersonFields,
+) -> Result<String, AppError> {
+    store
+        .add_new_spouse(&family_id, &person_id, fields)
         .map_err(command_error)
 }
 

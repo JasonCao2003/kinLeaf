@@ -27,15 +27,20 @@ const visible = computed(() => {
       || a.id.localeCompare(b.id))
   }
 
-  const pending = [{ entry: root, generation: 1 }]
-  const result: { entry: Registration; generation: number; hasChildren: boolean }[] = []
+  type TreeRow = { entry: Registration; generation: number; followingSiblings: boolean[] }
+  const pending: TreeRow[] = [{ entry: root, generation: 1, followingSiblings: [] }]
+  const result: (TreeRow & { hasChildren: boolean })[] = []
   while (pending.length) {
     const node = pending.pop()!
     const children = byParent.get(node.entry.id) ?? []
     result.push({ ...node, hasChildren: children.length > 0 })
     if (props.expandedIds.has(node.entry.id)) {
       for (let index = children.length - 1; index >= 0; index--) {
-        pending.push({ entry: children[index], generation: node.generation + 1 })
+        pending.push({
+          entry: children[index],
+          generation: node.generation + 1,
+          followingSiblings: [...node.followingSiblings, index < children.length - 1],
+        })
       }
     }
   }
@@ -45,7 +50,15 @@ const visible = computed(() => {
 
 <template>
   <ul aria-label="世系树" class="lineage">
-    <li v-for="node in visible" :key="node.entry.id" :style="{ paddingInlineStart: Math.min(node.generation - 1, 10) * 0.55 + 'rem' }">
+    <li v-for="node in visible" :key="node.entry.id">
+      <span
+        v-for="(continues, index) in node.followingSiblings.slice(-10)"
+        :key="index"
+        class="lineage-connector"
+        :data-elbow="index === Math.min(node.followingSiblings.length, 10) - 1"
+        :data-last="!continues"
+        aria-hidden="true"
+      ></span>
       <button
         v-if="node.hasChildren"
         class="branch-toggle"
@@ -54,6 +67,7 @@ const visible = computed(() => {
         :aria-label="(expandedIds.has(node.entry.id) ? '折叠 ' : '展开 ') + node.entry.name"
         @click="emit('toggle', node.entry.id)"
       >{{ expandedIds.has(node.entry.id) ? '−' : '+' }}</button>
+      <span v-else class="branch-toggle" aria-hidden="true"></span>
       <button
         class="lineage-entry"
         type="button"

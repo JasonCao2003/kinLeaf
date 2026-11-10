@@ -16,6 +16,10 @@ pub struct Store {
 pub(crate) type StoreResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 impl Store {
+    pub(crate) fn directory(&self) -> &Path {
+        &self.directory
+    }
+
     pub fn new(directory: &Path) -> Self {
         Self {
             directory: directory.to_owned(),

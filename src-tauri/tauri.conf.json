@@ -1,6 +1,6 @@
 {
   "productName": "枝间 Kinleaf",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.kinleaf.desktop",
   "build": {
     "features": ["desktop"],

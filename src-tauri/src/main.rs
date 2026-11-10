@@ -39,6 +39,7 @@ fn create_family(
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let directory = app.path().app_data_dir()?.join("families");
             app.manage(Store::new(&directory));
@@ -54,12 +55,15 @@ fn main() {
             commands::update_person,
             commands::find_people,
             commands::set_parents,
+            commands::add_new_spouse,
             commands::set_spouse,
             commands::list_registrations,
             commands::read_member,
             commands::list_children,
             commands::get_entry,
-            commands::search_entries
+            commands::search_entries,
+            commands::export_backup,
+            commands::restore_backup
         ])
         .run(tauri::generate_context!())
         .expect("start Kinleaf");

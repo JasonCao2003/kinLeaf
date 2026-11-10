@@ -7,16 +7,19 @@ import MemberSearch from './MemberSearch.vue'
 const props = defineProps<{ family: FamilySummary }>()
 const api = memberApi(props.family.id)
 const registrations = ref<Awaited<ReturnType<typeof api.registrations>>>([])
-const people = ref<Awaited<ReturnType<typeof api.people>>>([])
 const member = ref<Awaited<ReturnType<typeof api.read>> | null>(null)
 const detail = ref<Awaited<ReturnType<typeof api.detail>> | null>(null)
 const expandedIds = ref(new Set<string>())
 const searchRevision = ref(0)
 const selectedId = ref(props.family.rootEntryId)
 const selected = computed(() => registrations.value.find(entry => entry.id === selectedId.value))
-const relatives = computed(() => people.value.filter(person => person.id !== selected.value?.personId))
+const lineageParent = computed(() => {
+  const parentId = selected.value?.parentEntryId
+  return parentId ? registrations.value.find(entry => entry.id === parentId) : undefined
+})
+const lineageChildren = computed(() =>
+  registrations.value.filter(entry => entry.parentEntryId === selectedId.value))
 const activePanel = ref<'profile' | 'registration' | 'relatives'>('profile')
-const addingChild = ref(false)
 const panels = [
   { id: 'profile', label: '个人档案' },
   { id: 'registration', label: '支系登记' },
@@ -28,9 +31,7 @@ const parentId = ref('')
 const rank = ref<number | ''>('')
 const branchNotes = ref('')
 const childName = ref('')
-const existingPerson = ref('')
-const relativeName = ref('')
-const spouseId = ref('')
+const spouseName = ref('')
 
 function newPerson(name: string): PersonFields {
   return { name, spectrumName: null, generationName: null, birthText: null, deathText: null, notes: null }
@@ -48,10 +49,8 @@ async function readSelection() {
   parentId.value = entry.parentEntryId ?? ''
   rank.value = entry.fields.rank ?? ''
   branchNotes.value = entry.fields.branchNotes ?? ''
-  spouseId.value = ''
   childName.value = ''
-  existingPerson.value = ''
-  addingChild.value = false
+  spouseName.value = ''
   const [profile, lineage] = await Promise.all([api.read(entry.personId), api.detail(entry.id)])
   member.value = profile
   detail.value = lineage
@@ -59,9 +58,7 @@ async function readSelection() {
 }
 
 async function refreshCatalog() {
-  const [entries, profiles] = await Promise.all([api.registrations(), api.people()])
-  registrations.value = entries
-  people.value = profiles
+  registrations.value = await api.registrations()
   searchRevision.value++
 }
 
@@ -85,8 +82,24 @@ async function run(action: () => Promise<void>) {
 }
 
 function toggleBranch(id: string) {
-  if (expandedIds.value.has(id)) expandedIds.value.delete(id)
-  else expandedIds.value.add(id)
+  if (!expandedIds.value.has(id)) {
+    expandedIds.value.add(id)
+    return
+  }
+
+  const childrenByParent = new Map<string, string[]>()
+  for (const entry of registrations.value) {
+    if (!entry.parentEntryId) continue
+    const children = childrenByParent.get(entry.parentEntryId) ?? []
+    children.push(entry.id)
+    childrenByParent.set(entry.parentEntryId, children)
+  }
+  const pending = [id]
+  while (pending.length) {
+    const branch = pending.pop()!
+    expandedIds.value.delete(branch)
+    for (const child of childrenByParent.get(branch) ?? []) pending.push(child)
+  }
 }
 
 function expandSelectionPath() {
@@ -146,47 +159,25 @@ function saveProfile() {
   })
 }
 
-function saveParents() {
-  const profile = member.value
+function addSpouse() {
   const entry = selected.value
-  if (!profile || !entry) return
+  if (!entry || !spouseName.value.trim()) return
   return run(async () => {
-    await api.setParents(entry.personId, profile.fatherId || null, profile.motherId || null)
+    await api.addNewSpouse(entry.personId, newPerson(spouseName.value))
+    spouseName.value = ''
     await refreshDetail()
-  })
-}
-
-function changeSpouse(id: string, linked: boolean) {
-  const entry = selected.value
-  const profile = member.value
-  if (!entry || !profile || !id) return
-  return run(async () => {
-    await api.setSpouse(entry.personId, id, linked)
-    await refreshDetail()
-    profile.spouseIds = detail.value?.spouses.map(person => person.id) ?? []
-    spouseId.value = ''
   })
 }
 
 function addChild() {
+  if (!childName.value.trim()) return
   return run(async () => {
-    const person = existingPerson.value
-      ? { existing: existingPerson.value }
-      : { new: newPerson(childName.value) }
+    const person = { new: newPerson(childName.value) }
     const parent = selectedId.value
     selectedId.value = await api.addChild(parent, person, { rank: null, branchNotes: null })
     expandedIds.value.add(parent)
     childName.value = ''
-    existingPerson.value = ''
     await refreshSelection()
-  })
-}
-
-function addRelative() {
-  return run(async () => {
-    await api.createPerson(newPerson(relativeName.value))
-    relativeName.value = ''
-    people.value = await api.people()
   })
 }
 
@@ -220,10 +211,6 @@ onMounted(() => run(refreshSelection))
         <p class="ancestor-path">{{ detail.hit.path.map(entry => entry.name).join(' / ') || '始祖' }}</p>
         <div class="archive-title">
           <h2>{{ detail.hit.entry.name }} <span class="generation">第 {{ detail.hit.generation }} 世</span></h2>
-          <button
-            class="ink-button" type="button" :disabled="busy" aria-controls="add-child-panel"
-            :aria-expanded="addingChild" @click="addingChild = !addingChild"
-          >{{ addingChild ? '收起登记' : '登记后代' }}</button>
         </div>
         <ul v-if="detail.otherRegistrations.length" class="linked-entries" aria-label="其他支系登记">
           <li v-for="hit in detail.otherRegistrations" :key="hit.entry.entryId">
@@ -231,21 +218,6 @@ onMounted(() => run(refreshSelection))
           </li>
         </ul>
       </header>
-      <fieldset v-if="selected && member" v-show="addingChild" id="add-child-panel" class="archive-panel" :disabled="busy">
-        <legend>登记后代</legend>
-        <form class="paper-form" @submit.prevent="addChild">
-          <label>档案来源
-            <select v-model="existingPerson">
-              <option value="">新建个人档案</option>
-              <option v-for="person in people" :key="person.id" :value="person.id">
-                {{ person.name }} · {{ person.id.slice(0, 8) }}
-              </option>
-            </select>
-          </label>
-          <label v-if="!existingPerson">姓名 <input v-model="childName" required></label>
-          <button>{{ existingPerson ? '登记现有档案（兼祧）' : '新增后代' }}</button>
-        </form>
-      </fieldset>
       <div v-if="selected && member" class="archive-sections" role="group" aria-label="档案分区">
         <button
           v-for="panel in panels" :key="panel.id" type="button" :aria-pressed="activePanel === panel.id"
@@ -289,41 +261,20 @@ onMounted(() => run(refreshSelection))
 
       <fieldset v-if="selected && member" v-show="activePanel === 'relatives'" id="relatives-panel" class="archive-panel" :disabled="busy">
         <legend>亲属关系</legend>
-        <form class="paper-form" @submit.prevent="saveParents">
-          <label>生父
-            <select v-model="member.fatherId">
-              <option :value="null">未知</option>
-              <option v-for="person in relatives" :key="person.id" :value="person.id">{{ person.name }} · {{ person.id.slice(0, 8) }}</option>
-            </select>
-          </label>
-          <label>生母
-            <select v-model="member.motherId">
-              <option :value="null">未知</option>
-              <option v-for="person in relatives" :key="person.id" :value="person.id">{{ person.name }} · {{ person.id.slice(0, 8) }}</option>
-            </select>
-          </label>
-          <button class="ink-button">保存父母关系</button>
+        <div class="lineage-relations">
+          <p>谱系上级：{{ lineageParent?.name ?? '无' }}</p>
+          <p>直接下级：{{ lineageChildren.map(entry => entry.name).join('、') || '无' }}</p>
+        </div>
+        <p v-if="detail?.spouses.length" class="lineage-relations">
+          配偶：{{ detail.spouses.map(person => person.name).join('、') }}
+        </p>
+        <form class="paper-form" @submit.prevent="addSpouse">
+          <label>配偶姓名 <input v-model="spouseName" required></label>
+          <button class="ink-button">添加配偶</button>
         </form>
-        <ul v-if="member.spouseIds.length">
-          <li v-for="id in member.spouseIds" :key="id">
-            {{ people.find(person => person.id === id)?.name }}
-            <button type="button" @click="changeSpouse(id, false)">解除配偶关联</button>
-          </li>
-        </ul>
-        <form class="paper-form" @submit.prevent="changeSpouse(spouseId, true)">
-          <label>配偶
-            <select v-model="spouseId" required>
-              <option value="" disabled>选择档案</option>
-              <option v-for="person in relatives.filter(person => !member?.spouseIds.includes(person.id))" :key="person.id" :value="person.id">
-                {{ person.name }} · {{ person.id.slice(0, 8) }}
-              </option>
-            </select>
-          </label>
-          <button>添加配偶</button>
-        </form>
-        <form class="paper-form" @submit.prevent="addRelative">
-          <label>新建亲属档案 <input v-model="relativeName" required></label>
-          <button>创建档案</button>
+        <form class="paper-form" @submit.prevent="addChild">
+          <label>子女姓名 <input v-model="childName" required></label>
+          <button class="ink-button">添加子女</button>
         </form>
       </fieldset>
 

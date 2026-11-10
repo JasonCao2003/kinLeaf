@@ -14,6 +14,14 @@ export function createFamily(name: string, founderName: string) {
   return invoke<FamilySummary>('create_family', { name, founderName })
 }
 
+export function exportBackup(familyId: string) {
+  return invoke<boolean>('export_backup', { familyId })
+}
+
+export function restoreBackup() {
+  return invoke<FamilySummary | null>('restore_backup')
+}
+
 export interface PersonFields {
   name: string
   spectrumName: string | null
@@ -69,6 +77,8 @@ export function memberApi(familyId: string) {
       invoke<void>('set_parents', { familyId, personId, fatherId, motherId }),
     setSpouse: (personId: string, otherId: string, linked: boolean) =>
       invoke<void>('set_spouse', { familyId, personId, otherId, linked }),
+    addNewSpouse: (personId: string, fields: PersonFields) =>
+      invoke<string>('add_new_spouse', { familyId, personId, fields }),
   }
 }
 

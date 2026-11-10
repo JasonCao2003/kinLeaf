@@ -3,6 +3,35 @@ use kinleaf::{
     store::Store,
 };
 
+#[test]
+fn adding_a_new_spouse_creates_and_links_the_profile_atomically() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Store::new(directory.path());
+    let family = store
+        .create_family("Test".into(), "Founder".into())
+        .unwrap();
+    let founder = store
+        .list_registrations(&family.id)
+        .unwrap()
+        .remove(0)
+        .person_id;
+    assert!(store
+        .add_new_spouse(&family.id, "missing", person("Orphan"))
+        .is_err());
+    assert!(store.find_people(&family.id, "Orphan").unwrap().is_empty());
+    let spouse = store
+        .add_new_spouse(&family.id, &founder, person("Partner"))
+        .unwrap();
+    assert_eq!(
+        store.read_member(&family.id, &founder).unwrap().spouse_ids,
+        [spouse.clone()]
+    );
+    assert_eq!(
+        store.read_member(&family.id, &spouse).unwrap().spouse_ids,
+        [founder]
+    );
+}
+
 fn person(name: &str) -> PersonFields {
     PersonFields {
         name: name.into(),

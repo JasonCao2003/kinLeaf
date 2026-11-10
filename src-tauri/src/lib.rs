@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod members;
 pub mod model;
 pub mod queries;

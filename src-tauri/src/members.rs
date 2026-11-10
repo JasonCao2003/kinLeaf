@@ -202,6 +202,21 @@ impl Store {
         Ok(())
     }
 
+    pub fn add_new_spouse(
+        &self,
+        family: &str,
+        person: &str,
+        fields: PersonFields,
+    ) -> StoreResult<String> {
+        let mut connection = self.open_family(family)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_person(&transaction, person)?;
+        let spouse = insert_person(&transaction, fields)?;
+        change_spouse_link(&transaction, person, &spouse, true)?;
+        transaction.commit()?;
+        Ok(spouse)
+    }
+
     pub fn set_spouse(
         &self,
         family: &str,
@@ -213,15 +228,24 @@ impl Store {
         let connection = self.open_family(family)?;
         require_person(&connection, person)?;
         require_person(&connection, other)?;
-        let (first, second) = (person.min(other), person.max(other));
-        let sql = if linked {
-            "INSERT INTO spouse VALUES (?1, ?2) ON CONFLICT DO NOTHING"
-        } else {
-            "DELETE FROM spouse WHERE person_a_id = ?1 AND person_b_id = ?2"
-        };
-        connection.execute(sql, params![first, second])?;
-        Ok(())
+        change_spouse_link(&connection, person, other, linked)
     }
+}
+
+fn change_spouse_link(
+    connection: &Connection,
+    person: &str,
+    other: &str,
+    linked: bool,
+) -> StoreResult<()> {
+    let (first, second) = (person.min(other), person.max(other));
+    let sql = if linked {
+        "INSERT INTO spouse VALUES (?1, ?2) ON CONFLICT DO NOTHING"
+    } else {
+        "DELETE FROM spouse WHERE person_a_id = ?1 AND person_b_id = ?2"
+    };
+    connection.execute(sql, params![first, second])?;
+    Ok(())
 }
 
 impl Store {

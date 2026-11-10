@@ -1,6 +1,6 @@
 [package]
 name = "kinleaf"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
@@ -10,14 +10,19 @@ tempfile = "3"
 uuid = { version = "1", features = ["v4"] }
 
 [features]
-desktop = ["dep:tauri"]
+desktop = ["dep:tauri", "dep:tauri-plugin-dialog"]
 
 [dependencies.tauri]
 version = "2"
 optional = true
+features = []
+
+[dependencies.tauri-plugin-dialog]
+version = "2"
+optional = true
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
 
 [[bin]]
 name = "kinleaf"
