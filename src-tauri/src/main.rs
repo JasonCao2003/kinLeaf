@@ -1,0 +1,48 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use kinleaf::{
+    model::{FamilyCatalog, FamilySummary},
+    store::Store,
+};
+use serde::Serialize;
+use tauri::{Manager, State};
+
+#[derive(Serialize)]
+struct AppError {
+    code: &'static str,
+    message: String,
+}
+
+#[tauri::command]
+fn list_families(store: State<'_, Store>) -> Result<FamilyCatalog, AppError> {
+    store.read_catalog().map_err(|error| AppError {
+        code: "list_failed",
+        message: error.to_string(),
+    })
+}
+
+#[tauri::command]
+fn create_family(
+    store: State<'_, Store>,
+    name: String,
+    founder_name: String,
+) -> Result<FamilySummary, AppError> {
+    store
+        .create_family(name, founder_name)
+        .map_err(|error| AppError {
+            code: "create_failed",
+            message: error.to_string(),
+        })
+}
+
+fn main() {
+    tauri::Builder::default()
+        .setup(|app| {
+            let directory = app.path().app_data_dir()?.join("families");
+            app.manage(Store::new(&directory));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![list_families, create_family])
+        .run(tauri::generate_context!())
+        .expect("start Kinleaf");
+}

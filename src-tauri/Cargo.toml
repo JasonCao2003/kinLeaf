@@ -1,0 +1,25 @@
+[package]
+name = "kinleaf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rusqlite = { version = "0.38", features = ["bundled", "backup"] }
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+
+[features]
+desktop = ["dep:tauri"]
+
+[dependencies.tauri]
+version = "2"
+optional = true
+
+[build-dependencies]
+tauri-build = "2"
+
+[[bin]]
+name = "kinleaf"
+path = "src/main.rs"
+required-features = ["desktop"]

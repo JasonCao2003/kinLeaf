@@ -1,0 +1,15 @@
+{
+  "productName": "枝间 Kinleaf",
+  "version": "0.1.0",
+  "identifier": "com.kinleaf.desktop",
+  "build": {
+    "features": ["desktop"],
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "title": "枝间 Kinleaf", "width": 960, "height": 640 }]
+  }
+}
