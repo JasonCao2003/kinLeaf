@@ -67,3 +67,33 @@ pub struct EditableMember {
     pub spouse_ids: Vec<String>,
     pub registration_count: i64,
 }
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntrySummary {
+    pub entry_id: String,
+    pub person_id: String,
+    pub name: String,
+    pub rank: Option<i64>,
+    pub has_children: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub entry: EntrySummary,
+    pub generation: usize,
+    pub path: Vec<EntrySummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryDetail {
+    pub hit: SearchHit,
+    pub person: PersonFields,
+    pub fields: EntryFields,
+    pub father: Option<PersonSummary>,
+    pub mother: Option<PersonSummary>,
+    pub spouses: Vec<PersonSummary>,
+    pub other_registrations: Vec<SearchHit>,
+}

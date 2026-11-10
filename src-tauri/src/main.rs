@@ -56,7 +56,10 @@ fn main() {
             commands::set_parents,
             commands::set_spouse,
             commands::list_registrations,
-            commands::read_member
+            commands::read_member,
+            commands::list_children,
+            commands::get_entry,
+            commands::search_entries
         ])
         .run(tauri::generate_context!())
         .expect("start Kinleaf");

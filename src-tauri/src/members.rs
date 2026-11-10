@@ -255,36 +255,43 @@ impl Store {
     pub fn read_member(&self, family: &str, id: &str) -> StoreResult<crate::model::EditableMember> {
         let mut connection = self.open_family(family)?;
         let transaction = connection.transaction()?;
-        let mut member = transaction.query_row(
-            "SELECT p.name, p.spectrum_name, p.generation_name, p.birth_text, p.death_text,
+        read_member_on(&transaction, id)
+    }
+}
+
+pub(crate) fn read_member_on(
+    connection: &Connection,
+    id: &str,
+) -> StoreResult<crate::model::EditableMember> {
+    let mut member = connection.query_row(
+        "SELECT p.name, p.spectrum_name, p.generation_name, p.birth_text, p.death_text,
                     p.notes, r.father_id, r.mother_id,
                     (SELECT count(*) FROM entry WHERE person_id = p.id)
              FROM person p LEFT JOIN parents r ON p.id = r.child_id WHERE p.id = ?1",
-            [id],
-            |row| {
-                Ok(crate::model::EditableMember {
-                    fields: PersonFields {
-                        name: row.get(0)?,
-                        spectrum_name: row.get(1)?,
-                        generation_name: row.get(2)?,
-                        birth_text: row.get(3)?,
-                        death_text: row.get(4)?,
-                        notes: row.get(5)?,
-                    },
-                    father_id: row.get(6)?,
-                    mother_id: row.get(7)?,
-                    registration_count: row.get(8)?,
-                    spouse_ids: Vec::new(),
-                })
-            },
-        )?;
-        let mut statement = transaction.prepare(
-            "SELECT person_b_id FROM spouse WHERE person_a_id = ?1
+        [id],
+        |row| {
+            Ok(crate::model::EditableMember {
+                fields: PersonFields {
+                    name: row.get(0)?,
+                    spectrum_name: row.get(1)?,
+                    generation_name: row.get(2)?,
+                    birth_text: row.get(3)?,
+                    death_text: row.get(4)?,
+                    notes: row.get(5)?,
+                },
+                father_id: row.get(6)?,
+                mother_id: row.get(7)?,
+                registration_count: row.get(8)?,
+                spouse_ids: Vec::new(),
+            })
+        },
+    )?;
+    let mut statement = connection.prepare(
+        "SELECT person_b_id FROM spouse WHERE person_a_id = ?1
              UNION SELECT person_a_id FROM spouse WHERE person_b_id = ?1",
-        )?;
-        member.spouse_ids = statement
-            .query_map([id], |row| row.get(0))?
-            .collect::<Result<_, _>>()?;
-        Ok(member)
-    }
+    )?;
+    member.spouse_ids = statement
+        .query_map([id], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(member)
 }

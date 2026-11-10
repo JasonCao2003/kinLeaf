@@ -52,6 +52,8 @@ interface PersonSummary {
 
 export function memberApi(familyId: string) {
   return {
+    detail: (entryId: string) => invoke<EntryDetail>('get_entry', { familyId, entryId }),
+    search: (query: string) => invoke<SearchHit[]>('search_entries', { familyId, query }),
     registrations: () => invoke<Registration[]>('list_registrations', { familyId }),
     people: () => invoke<PersonSummary[]>('find_people', { familyId, query: '' }),
     read: (personId: string) => invoke<Member>('read_member', { familyId, personId }),
@@ -68,4 +70,28 @@ export function memberApi(familyId: string) {
     setSpouse: (personId: string, otherId: string, linked: boolean) =>
       invoke<void>('set_spouse', { familyId, personId, otherId, linked }),
   }
+}
+
+export interface EntrySummary {
+  entryId: string
+  personId: string
+  name: string
+  rank: number | null
+  hasChildren: boolean
+}
+
+export interface SearchHit {
+  entry: EntrySummary
+  generation: number
+  path: EntrySummary[]
+}
+
+interface EntryDetail {
+  hit: SearchHit
+  person: PersonFields
+  fields: EntryFields
+  father: PersonSummary | null
+  mother: PersonSummary | null
+  spouses: PersonSummary[]
+  otherRegistrations: SearchHit[]
 }

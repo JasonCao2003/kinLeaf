@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { memberApi, type FamilySummary, type PersonFields } from '../api'
+import { memberApi, type FamilySummary, type PersonFields, type SearchHit } from '../api'
+import LineageTree from './LineageTree.vue'
+import MemberSearch from './MemberSearch.vue'
 
 const props = defineProps<{ family: FamilySummary }>()
 const api = memberApi(props.family.id)
 const registrations = ref<Awaited<ReturnType<typeof api.registrations>>>([])
 const people = ref<Awaited<ReturnType<typeof api.people>>>([])
 const member = ref<Awaited<ReturnType<typeof api.read>> | null>(null)
+const detail = ref<Awaited<ReturnType<typeof api.detail>> | null>(null)
+const expandedIds = ref(new Set<string>())
+const searchRevision = ref(0)
 const selectedId = ref(props.family.rootEntryId)
 const selected = computed(() => registrations.value.find(entry => entry.id === selectedId.value))
 const relatives = computed(() => people.value.filter(person => person.id !== selected.value?.personId))
@@ -30,19 +35,24 @@ function entryLabel(entry: { id: string; name: string }) {
 
 async function readSelection() {
   member.value = null
+  detail.value = null
   const entry = selected.value
   if (!entry) return
   parentId.value = entry.parentEntryId ?? ''
   rank.value = entry.fields.rank ?? ''
   branchNotes.value = entry.fields.branchNotes ?? ''
   spouseId.value = ''
-  member.value = await api.read(entry.personId)
+  const [profile, lineage] = await Promise.all([api.read(entry.personId), api.detail(entry.id)])
+  member.value = profile
+  detail.value = lineage
+  expandSelectionPath()
 }
 
 async function refreshCatalog() {
   const [entries, profiles] = await Promise.all([api.registrations(), api.people()])
   registrations.value = entries
   people.value = profiles
+  searchRevision.value++
 }
 
 async function refreshSelection() {
@@ -64,6 +74,32 @@ async function run(action: () => Promise<void>) {
   }
 }
 
+function toggleBranch(id: string) {
+  if (expandedIds.value.has(id)) expandedIds.value.delete(id)
+  else expandedIds.value.add(id)
+}
+
+function expandSelectionPath() {
+  for (const ancestor of detail.value?.hit.path.slice(0, -1) ?? []) {
+    expandedIds.value.add(ancestor.entryId)
+  }
+}
+
+function selectEntry(id: string) {
+  return run(async () => {
+    selectedId.value = id
+    await readSelection()
+  })
+}
+
+function locate(hit: SearchHit) {
+  return selectEntry(hit.entry.entryId)
+}
+
+async function refreshDetail() {
+  detail.value = await api.detail(selectedId.value)
+}
+
 function saveRegistration() {
   return run(async () => {
     await api.updateEntry(selectedId.value, parentId.value || null, {
@@ -71,6 +107,8 @@ function saveRegistration() {
       branchNotes: branchNotes.value || null,
     })
     await refreshCatalog()
+    await refreshDetail()
+    expandSelectionPath()
   })
 }
 
@@ -90,6 +128,7 @@ function saveProfile() {
   return run(async () => {
     await api.updatePerson(entry.personId, profile.fields)
     await refreshCatalog()
+    await refreshDetail()
   })
 }
 
@@ -99,6 +138,7 @@ function saveParents() {
   if (!profile || !entry) return
   return run(async () => {
     await api.setParents(entry.personId, profile.fatherId || null, profile.motherId || null)
+    await refreshDetail()
   })
 }
 
@@ -108,7 +148,8 @@ function changeSpouse(id: string, linked: boolean) {
   if (!entry || !profile || !id) return
   return run(async () => {
     await api.setSpouse(entry.personId, id, linked)
-    profile.spouseIds = (await api.read(entry.personId)).spouseIds
+    await refreshDetail()
+    profile.spouseIds = detail.value?.spouses.map(person => person.id) ?? []
     spouseId.value = ''
   })
 }
@@ -118,7 +159,9 @@ function addChild() {
     const person = existingPerson.value
       ? { existing: existingPerson.value }
       : { new: newPerson(childName.value) }
-    selectedId.value = await api.addChild(selectedId.value, person, { rank: null, branchNotes: null })
+    const parent = selectedId.value
+    selectedId.value = await api.addChild(parent, person, { rank: null, branchNotes: null })
+    expandedIds.value.add(parent)
     childName.value = ''
     existingPerson.value = ''
     await refreshSelection()
@@ -140,6 +183,28 @@ onMounted(() => run(refreshSelection))
   <section aria-labelledby="member-editor">
     <h2 id="member-editor">族员管理</h2>
     <p v-if="error" role="alert">{{ error }}</p>
+    <MemberSearch :key="searchRevision" :search="api.search" :disabled="busy" @locate="locate" />
+    <fieldset :disabled="busy">
+      <legend>世系浏览</legend>
+      <LineageTree
+        :entries="registrations"
+        :root-id="family.rootEntryId"
+        :selected-id="selectedId"
+        :expanded-ids="expandedIds"
+        @select="selectEntry"
+        @toggle="toggleBranch"
+      />
+      <section v-if="detail" aria-label="世系详情">
+        <h3>{{ detail.hit.entry.name }} · 第 {{ detail.hit.generation }} 世</h3>
+        <p>生父 {{ detail.father?.name ?? '未知' }} · 生母 {{ detail.mother?.name ?? '未知' }}</p>
+        <p v-if="detail.spouses.length">配偶 {{ detail.spouses.map(person => person.name).join('、') }}</p>
+        <ul v-if="detail.otherRegistrations.length" aria-label="其他支系登记">
+          <li v-for="hit in detail.otherRegistrations" :key="hit.entry.entryId">
+            <button type="button" @click="locate(hit)">{{ hit.path.map(entry => entry.name).join(' › ') }}</button>
+          </li>
+        </ul>
+      </section>
+    </fieldset>
     <fieldset :disabled="busy">
       <legend>选择族员登记</legend>
       <select v-model="selectedId" aria-label="族员登记" @change="run(readSelection)">

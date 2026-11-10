@@ -134,3 +134,36 @@ pub fn read_member(
         .read_member(&family_id, &person_id)
         .map_err(command_error)
 }
+
+#[tauri::command]
+pub fn list_children(
+    store: State<'_, Store>,
+    family_id: String,
+    parent_entry_id: String,
+) -> Result<Vec<kinleaf::model::EntrySummary>, AppError> {
+    store
+        .list_children(&family_id, &parent_entry_id)
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub fn get_entry(
+    store: State<'_, Store>,
+    family_id: String,
+    entry_id: String,
+) -> Result<kinleaf::model::EntryDetail, AppError> {
+    store
+        .get_entry(&family_id, &entry_id)
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub fn search_entries(
+    store: State<'_, Store>,
+    family_id: String,
+    query: String,
+) -> Result<Vec<kinleaf::model::SearchHit>, AppError> {
+    store
+        .search_entries(&family_id, &query)
+        .map_err(command_error)
+}
